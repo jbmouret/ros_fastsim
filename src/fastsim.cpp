@@ -6,9 +6,21 @@
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/Bool.h"
 #include "std_msgs/Int16.h"
+#include "std_msgs/Float32.h"
 #include "fastsim.hpp"
 
 using namespace fastsim;
+
+namespace fastsim {
+  float sp_left = 0;
+  float sp_right = 0;
+  void speed_left_cb(const std_msgs::Float32::ConstPtr& msg) {
+    sp_left = msg->data;
+  }
+  void speed_right_cb(const std_msgs::Float32::ConstPtr& msg) {
+    sp_right = msg->data;
+  }
+}
 
 int main(int argc, char **argv) {
   ros::init(argc, argv, "fastsim");
@@ -25,12 +37,11 @@ int main(int argc, char **argv) {
     n.advertise<std_msgs::Bool>("right_bumper", 1000);
 
 
-  /*  ros::Subscriber speed_left = 
+  ros::Subscriber speed_left = 
     n.subscribe("speed_left", 1000, speed_left_cb);
   ros::Subscriber speed_right = 
     n.subscribe("speed_right", 1000, speed_right_cb);
-  */
-
+  
   ros::Rate loop_rate(10);
   std::string map_name;
 
@@ -80,8 +91,7 @@ int main(int argc, char **argv) {
     ros::spinOnce();
 
     d.update();
-    r.move(1.0, 1.1, m);
-
+    r.move(fastsim::sp_left, fastsim::sp_right, m);
 
   }
   

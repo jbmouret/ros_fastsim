@@ -92,8 +92,8 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS} 
   /usr/include/SDL 
-  $ENV{HOME}/src/libfastsim/src
+  $ENV{HOME}/git/libfastsim/src
 )
-link_directories($ENV{HOME}/src/libfastsim/build/src /usr/lib/i386-linux-gnu)
+link_directories($ENV{HOME}/git/libfastsim/build/src /usr/lib/i386-linux-gnu)
 add_executable(simu_fastsim src/fastsim.cpp)
 target_link_libraries(simu_fastsim ${catkin_LIBRARIES} fastsim SDL)

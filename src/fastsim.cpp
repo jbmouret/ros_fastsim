@@ -42,7 +42,6 @@ int main(int argc, char **argv) {
   ros::Subscriber speed_right = 
     n.subscribe("speed_right", 1000, speed_right_cb);
   
-  ros::Rate loop_rate(10);
   std::string map_name;
 
   if (!n.getParam("map_name", map_name))
@@ -67,7 +66,7 @@ int main(int argc, char **argv) {
 
   Display d(m, r);
   
-  
+  ros::Rate loop_rate(50);
   while (ros::ok()) {
     // lasers
     std_msgs::Float32MultiArray laser_msg;
@@ -93,6 +92,7 @@ int main(int argc, char **argv) {
     d.update();
     r.move(fastsim::sp_left, fastsim::sp_right, m);
 
+    loop_rate.sleep();
   }
   
   return 0;

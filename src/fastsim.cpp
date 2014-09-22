@@ -73,6 +73,8 @@ void publish_laser_scan(const ros::Publisher& laser_scan,
       // see: http://docs.ros.org/api/sensor_msgs/html/msg/LaserScan.html
       if (scanner.get_lasers()[i].get_dist() > 0)
 	scan_msg.ranges.push_back(scanner.get_lasers()[i].get_dist());
+      else
+	scan_msg.ranges.push_back(0);
     } 
     scan_msg.header.frame_id = "base_laser_link";;
     scan_msg.header.stamp = sim_time;
@@ -82,8 +84,8 @@ void publish_laser_scan(const ros::Publisher& laser_scan,
     tf::Quaternion laserQ;
     laserQ.setRPY(0.0, 0.0, robot->get_pos().theta());
     tf::Transform txLaser = 
-      tf::Transform(laserQ, tf::Point(robot->get_pos().x(), 
-				      robot->get_pos().y(), 
+      tf::Transform(laserQ, tf::Point(0,//robot->get_pos().x(), 
+				      0,//robot->get_pos().y(), 
 				      0.15));
     tf.sendTransform(tf::StampedTransform(txLaser, sim_time, 
 					  "base_link", "base_laser_link"));
@@ -107,7 +109,7 @@ void publish_odometry(const ros::Publisher& odom,
   msg.twist.twist.linear.x = robot->get_vx() / sim_dt;
   msg.twist.twist.linear.y = robot->get_vy() / sim_dt;
   msg.twist.twist.angular.z = robot->get_va() / sim_dt;
-  msg.header.frame_id = "fastsim_odom";
+  msg.header.frame_id = "odom";
   msg.header.stamp = sim_time;
 
   odom.publish(msg);
@@ -124,13 +126,17 @@ void publish_odometry(const ros::Publisher& odom,
 int main(int argc, char **argv) {
   // init
   ros::init(argc, argv, "fastsim");
-  ros::NodeHandle n;
+  ros::NodeHandle n("~");
 
 
   // load config
   std::string settings_name;
-  if (!n.getParam("settings", settings_name))
-    settings_name = "envs/example.xml";
+  n.param("settings", settings_name, std::string("envs/example.xml"));
+  std::string path;
+  n.param("path", path, std::string("."));
+  ROS_WARN_STREAM("chaning path to "<<path);
+  ROS_WARN_STREAM("settings is "<<settings_name);
+  chdir(path.c_str());
   Settings settings(settings_name);
   boost::shared_ptr<Robot> robot = settings.robot();
   boost::shared_ptr<Map> map = settings.map();
@@ -138,25 +144,25 @@ int main(int argc, char **argv) {
 
   // bumpers
   ros::Publisher left_bumper = 
-    n.advertise<std_msgs::Bool>("left_bumper", 100);
+    n.advertise<std_msgs::Bool>("left_bumper", 10);
   ros::Publisher right_bumper = 
-    n.advertise<std_msgs::Bool>("right_bumper", 100);
+    n.advertise<std_msgs::Bool>("right_bumper", 10);
 
   // lasers
   ros::Publisher sensor_lasers;
   if (!robot->get_lasers().empty())
-    sensor_lasers = n.advertise<std_msgs::Float32MultiArray>("lasers", 100);
+    sensor_lasers = n.advertise<std_msgs::Float32MultiArray>("lasers", 10);
   ros::Publisher laser_scan;
   if (!robot->get_laser_scanners().empty())
-    laser_scan = n.advertise<sensor_msgs::LaserScan>("laser_scan", 100);
+    laser_scan = n.advertise<sensor_msgs::LaserScan>("laser_scan", 10);
 
   // radars (-> goals)
   ros::Publisher sensor_radars;
   if (!robot->get_radars().empty())
-    sensor_radars = n.advertise<std_msgs::Int16MultiArray>("radars", 100);
+    sensor_radars = n.advertise<std_msgs::Int16MultiArray>("radars", 10);
 
   // odometry
-  ros::Publisher odom = n.advertise<nav_msgs::Odometry>("odom", 100);
+  ros::Publisher odom = n.advertise<nav_msgs::Odometry>("odom", 10);
   tf::TransformBroadcaster tf;
 
   // clock
@@ -165,16 +171,16 @@ int main(int argc, char **argv) {
 
   // inputs
   ros::Subscriber speed_left = 
-    n.subscribe("speed_left", 100, speed_left_cb);
+    n.subscribe("speed_left", 10, speed_left_cb);
   ros::Subscriber speed_right = 
-    n.subscribe("speed_right", 100, speed_right_cb);
+    n.subscribe("speed_right", 10, speed_right_cb);
   
   // init the window (should we make this easy to de-activate?).
   Display d(map, *robot);
   
-  ros::Rate loop_rate(20);
-  float sim_dt = 1.0 / 20.0f;
-  ros::Time sim_time(0);
+  ros::Rate loop_rate(30);
+  float sim_dt = 1.0 / 30.0f;
+  ros::Time sim_time = ros::Time::now();
   while (ros::ok()) {
     // bumpers
     std_msgs::Bool msg_left_bumper, msg_right_bumper;
@@ -189,17 +195,27 @@ int main(int argc, char **argv) {
     publish_radars(sensor_radars, robot);
     publish_odometry(odom, tf, robot, sim_time, sim_dt);
 
+    // and the clock
     rosgraph_msgs::Clock msg_clock;
     msg_clock.clock = sim_time;
     clock.publish(msg_clock);
-
+    
     ros::spinOnce();
-
     d.update();
-    robot->move(fastsim::sp_left, fastsim::sp_right, map);
+    
+    // explorer behavior
+    float s1 = 1, s2 = 1;
+    if (robot->get_left_bumper() 
+	|| robot->get_right_bumper()
+	|| (robot->get_vx() == 0 && robot->get_vy() == 0 && robot->get_va() == 0))
+      {s2 = -1; s1 = 1; }
+    
+    robot->move(s1, s2, map);
+    
+    //robot->move(fastsim::sp_left, fastsim::sp_right, map);
 
     loop_rate.sleep();
-    sim_time = sim_time + ros::Duration(sim_dt);
+    sim_time = ros::Time::now();//sim_time + ros::Duration(sim_dt);
   }
   
   return 0;

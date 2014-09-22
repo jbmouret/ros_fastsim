@@ -1,0 +1,20 @@
+<launch>
+
+  <node pkg="fastsim" type="simu_fastsim" name="simu_fastsim" output="screen">
+    <param name="settings" type="str" value="$(find fastsim)/envs/example.xml"/>
+    <param name="path" type="str" value="$(find fastsim)/envs" />
+  </node>
+
+
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+    <remap from="/scan" to="/simu_fastsim/laser_scan"/>
+    <param name="odom_frame" value="odom"/>
+    <param name="base_frame" value="base_footprint"/>
+    <param name="xmin" value="-5.0"/>
+    <param name="ymin" value="-5.0"/>
+    <param name="xmax" value="5.0"/>
+    <param name="ymax" value="5.0"/>  
+    <param name="delta" value="0.1"/>
+  </node>
+
+</launch>

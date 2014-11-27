@@ -4,6 +4,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/foreach.hpp>
+#include <boost/make_shared.hpp>
 
 #include "ros/ros.h"
 #include "std_msgs/Float32MultiArray.h"
@@ -11,6 +12,7 @@
 #include "std_msgs/Bool.h"
 #include "std_msgs/Int16.h"
 #include "std_msgs/Float32.h"
+#include "std_msgs/Bool.h"
 #include "sensor_msgs/LaserScan.h"
 #include "nav_msgs/Odometry.h"
 #include "rosgraph_msgs/Clock.h"
@@ -18,19 +20,48 @@
 
 #include "fastsim.hpp"
 
+// custom services msgs
+#include "fastsim/Teleport.h"
+#include "fastsim/UpdateDisplay.h"
+#include "fastsim/AddTwoInts.h"
+
 using namespace fastsim;
 
 namespace fastsim {
   // speed left & right
   float sp_left = 0;
   float sp_right = 0;
-
+  bool display = true;
+  bool teleport = false;
+  float teleport_x = -1;
+  float teleport_y = -1;
+  float teleport_theta = 0;
+  bool new_speed_left = false;
+  bool new_speed_right = false;
+  
   // the callbacks
   void speed_left_cb(const std_msgs::Float32::ConstPtr& msg) {
+    new_speed_left = true;
     sp_left = msg->data;
   }
   void speed_right_cb(const std_msgs::Float32::ConstPtr& msg) {
+    new_speed_right = true;
     sp_right = msg->data;
+  }
+  bool display_cb(fastsim::UpdateDisplay::Request &req,
+			 fastsim::UpdateDisplay::Response &res) {
+    display = req.state;
+    res.ack = true;
+    return true;
+  }
+  bool teleport_cb(fastsim::Teleport::Request &req,
+		   fastsim::Teleport::Response &res) {
+    teleport = true;
+    teleport_x = req.x;
+    teleport_y = req.y;
+    teleport_theta = req.theta;
+    res.ack = true;
+    return true;
   }
 }
 
@@ -54,6 +85,8 @@ void publish_lasers(const ros::Publisher& sensor_lasers,
     sensor_lasers.publish(laser_msg);
   }
 }
+
+
 void publish_laser_scan(const ros::Publisher& laser_scan,
 			tf::TransformBroadcaster& tf,
 			const boost::shared_ptr<Robot>& robot,
@@ -75,7 +108,7 @@ void publish_laser_scan(const ros::Publisher& laser_scan,
 	scan_msg.ranges.push_back(scanner.get_lasers()[i].get_dist());
       else
 	scan_msg.ranges.push_back(0);
-    } 
+    }
     scan_msg.header.frame_id = "base_laser_link";;
     scan_msg.header.stamp = sim_time;
     laser_scan.publish(scan_msg);
@@ -128,20 +161,24 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "fastsim");
   ros::NodeHandle n("~");
 
-
-  // load config
+  // load ROS config
   std::string settings_name;
   n.param("settings", settings_name, std::string("envs/example.xml"));
   std::string path;
   n.param("path", path, std::string("."));
-  ROS_WARN_STREAM("chaning path to "<<path);
+  bool sync = false;
+  n.param("sync", sync, false);
+  ROS_WARN_STREAM("changing path to "<<path);
   ROS_WARN_STREAM("settings is "<<settings_name);
+  ROS_WARN_STREAM("sync is "<<sync);
   chdir(path.c_str());
+
+  // fastsim config
   Settings settings(settings_name);
   boost::shared_ptr<Robot> robot = settings.robot();
   boost::shared_ptr<Map> map = settings.map();
+  fastsim::display = settings.display();
   
-
   // bumpers
   ros::Publisher left_bumper = 
     n.advertise<std_msgs::Bool>("left_bumper", 10);
@@ -154,7 +191,7 @@ int main(int argc, char **argv) {
     sensor_lasers = n.advertise<std_msgs::Float32MultiArray>("lasers", 10);
   ros::Publisher laser_scan;
   if (!robot->get_laser_scanners().empty())
-    laser_scan = n.advertise<sensor_msgs::LaserScan>("laser_scan", 10);
+    laser_scan = n.advertise<sensor_msgs::LaserScan>("laser_scan", 1);
 
   // radars (-> goals)
   ros::Publisher sensor_radars;
@@ -174,14 +211,42 @@ int main(int argc, char **argv) {
     n.subscribe("speed_left", 10, speed_left_cb);
   ros::Subscriber speed_right = 
     n.subscribe("speed_right", 10, speed_right_cb);
+
+  // services
+  ros::ServiceServer service_teleport = 
+    n.advertiseService("teleport", teleport_cb);
+  ros::ServiceServer service_display = 
+    n.advertiseService("display", display_cb);
   
-  // init the window (should we make this easy to de-activate?).
-  Display d(map, *robot);
+  // init the window
+  boost::shared_ptr<Display> d;
   
   ros::Rate loop_rate(30);
   float sim_dt = 1.0 / 30.0f;
   ros::Time sim_time = ros::Time::now();
+
+  int k = 0;
   while (ros::ok()) {
+    if (fastsim::teleport)
+      {
+	std::cout<<"teleporting to:" 
+		 << teleport_x
+		 << "," << teleport_y <<","
+		 << "," << teleport_theta << std::endl;
+	fastsim::teleport = false;
+	robot->set_pos(Posture(teleport_x, teleport_y, teleport_theta));
+	robot->move(0, 0, map);
+	k = 0;
+      }
+
+    if (!sync || (new_speed_left && new_speed_right))
+      {
+	++k;
+	robot->move(fastsim::sp_left, fastsim::sp_right, map);
+	new_speed_left = false;
+	new_speed_right = false;
+    }
+
     // bumpers
     std_msgs::Bool msg_left_bumper, msg_right_bumper;
     msg_left_bumper.data = robot->get_left_bumper();
@@ -201,18 +266,24 @@ int main(int argc, char **argv) {
     clock.publish(msg_clock);
     
     ros::spinOnce();
-    d.update();
     
+    if (fastsim::display)
+      {
+	if (!d)
+	  d = boost::make_shared<Display>(map, *robot);
+	d->update();
+      }
+
+        
     // explorer behavior
-    float s1 = 1, s2 = 1;
+    /*float s1 = 1, s2 = 1;
     if (robot->get_left_bumper() 
 	|| robot->get_right_bumper()
 	|| (robot->get_vx() == 0 && robot->get_vy() == 0 && robot->get_va() == 0))
       {s2 = -1; s1 = 1; }
     
     robot->move(s1, s2, map);
-    
-    //robot->move(fastsim::sp_left, fastsim::sp_right, map);
+    */
 
     loop_rate.sleep();
     sim_time = ros::Time::now();//sim_time + ros::Duration(sim_dt);

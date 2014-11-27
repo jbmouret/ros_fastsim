@@ -1,5 +1,5 @@
 <launch>
-  <node pkg="fastsim" type="simu_fastsim" name="simu_fastsim">
+  <node pkg="fastsim" type="simu_fastsim" name="simu_fastsim" output="screen">
     <param name="settings" type="str" value="$(find fastsim)/envs/example.xml"/>
     <param name="path" type="str" value="$(find fastsim)/envs" />
   </node>

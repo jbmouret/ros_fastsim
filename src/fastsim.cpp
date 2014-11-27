@@ -23,7 +23,6 @@
 // custom services msgs
 #include "fastsim/Teleport.h"
 #include "fastsim/UpdateDisplay.h"
-#include "fastsim/AddTwoInts.h"
 
 using namespace fastsim;
 

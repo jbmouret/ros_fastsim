@@ -29,7 +29,7 @@ ROS parameters (see also the fastsim parameters, which are different)
 - path (`<param name="settings" type="str" value="$(find tp_er)/envs/example.xml"/>`): path of the map files (.pgm)
 
 
-Published topics:
+Published topics
 -----------------
 - `/simu_fastsim/left_bumper` (std_msgs::Bool): left bumper of the mobile robot
 - `/simu_fastsim/right_bumper` (std_msgs::Bool): right bumper of the mobile robot
@@ -38,7 +38,7 @@ Published topics:
 - `/simu_fastsim/radars` (std_msgs::Int16MultiArray): radars see "goal" objects; they see through walls
 - `/simu_fastsim/odom` (nav_msgs::Odometry): odometry
 
-Subscribes to:
+Subscribes to
 -------------
 - `/simu_fastsim/speed_left`: speed of the left motor (WARNING: see the "sync" ROS parameters)
 - `/simu_fastsim/speed_right`: speed of the right motor (WARNING: see the "sync" ROS parameters)
@@ -47,4 +47,66 @@ Services
 --------
 - `teleport` (fastsim::Teleport): (float32 x, float32 y, float32 theta) -> (bool ack) : teleport the robot to the specified (x,y,theta) position
 - `display` (fastsim::UpdateDisplay): (bool state) -> (bool ack) : activate/de-activate the update of the display (the window is still visible)
+
+Example (Python)
+----------------
+```python
+#!/usr/bin/env python
+import rospy
+from std_msgs.msg import String
+from std_msgs.msg import Float32
+from sensor_msgs.msg import LaserScan
+from fastsim.srv import *
+from nav_msgs.msg import *
+import math
+import numpy as np
+import random
+import copy
+
+class FastSim:
+    def __init__(self, name):
+        self.node = rospy.init_node(name)
+        self.sub_laserscan = rospy.Subscriber("simu_fastsim/laser_scan", 
+                                              LaserScan, self._scan_cb)
+        self.sub_odom = rospy.Subscriber("simu_fastsim/odom",
+                                         Odometry, self._odom_cb)
+        self.pub_speed_left = rospy.Publisher("simu_fastsim/speed_left", 
+                                              Float32, queue_size=1)
+        self.pub_speed_right = rospy.Publisher("simu_fastsim/speed_right",
+                                               Float32, queue_size=1)
+        self.r = rospy.Rate(200)
+        self.laser_scan = []
+        self.pos = [0, 0]
+        self.speed = 0
+
+    def sleep(self):
+        self.r.sleep()
+
+    def reset(self, x, y, theta):
+        print 'teleporting to', x,y,theta
+        rospy.wait_for_service('simu_fastsim/teleport')
+        try:
+            teleport = rospy.ServiceProxy('simu_fastsim/teleport', Teleport)
+            resp1 = teleport(x, y, theta)
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+    
+    def lasers(self):
+        while len(self.laser_scan) == 0: pass
+        return self.laser_scan
+
+    def set_speed(self, d1, d2):
+        self.pub_speed_left.publish(d1)
+        self.pub_speed_right.publish(d2)
+    
+    def _scan_cb(self, data):
+        self.laser_scan = 1 - np.array(data.ranges) / 100.0
+    def _odom_cb(self, data):
+        self.pos = [data.pose.pose.position.x,
+                    data.pose.pose.position.y]
+        vx = data.twist.twist.linear.x
+        vy = data.twist.twist.linear.y
+        self.speed = math.sqrt(vx * vx + vy * vy)
+```
+
 

@@ -12,6 +12,7 @@ In your ~/catkin_ws/src:
 
 ```
 git clone https://github.com/jbmouret/ros_fastsim.git
+cd ..
 catkin_make
 ```
 

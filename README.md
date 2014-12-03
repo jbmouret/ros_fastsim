@@ -16,8 +16,6 @@ cd ..
 catkin_make
 ```
 
-
-
 Testing
 =======
 ```
@@ -26,6 +24,8 @@ roslaunch src/ros_fastsim/envs/fastsim.launch
 
 Basic documentation
 ===================
+Please have a look at the libfastsim documentation as well!
+http://github.com/jbmouret/libfastsim
 
 ROS parameters (see also the fastsim parameters, which are different)
 ---------------------------------------------------------------------
@@ -40,7 +40,7 @@ Published topics
 - `/simu_fastsim/right_bumper` (std_msgs::Bool): right bumper of the mobile robot
 - `/simu_fastsim/lasers` (std_msgs::Float32MultiArray): single lasers (individually added in the xml file of libfastsim)
 - `/simu_fastsim/laser_scan` (sensor_msgs::LaserScan): standard laser scanner
-- `/simu_fastsim/radars` (std_msgs::Int16MultiArray): radars see "goal" objects; they see through walls
+- `/simu_fastsim/radars` (std_msgs::Int16MultiArray): radars see "goal" objects. They see through walls if they are configured to do so (see the XML file of fastsim). Each cell of the array corresponds to a radar sensor (typically, one for each goal color), and the number in the cell is the id (an integer) of the activated slice.
 - `/simu_fastsim/odom` (nav_msgs::Odometry): odometry
 
 Subscribes to

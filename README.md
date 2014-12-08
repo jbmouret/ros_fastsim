@@ -50,6 +50,13 @@ Subscribes to
 
 Services
 --------
+First, import the service messages:
+```python
+from fastsim.srv import *
+```
+
+Two services are available:
+
 - `teleport` (fastsim::Teleport): (float32 x, float32 y, float32 theta) -> (bool ack) : teleport the robot to the specified (x,y,theta) position
 - `display` (fastsim::UpdateDisplay): (bool state) -> (bool ack) : activate/de-activate the update of the display (the window is still visible)
 

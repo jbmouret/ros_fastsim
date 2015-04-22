@@ -6,9 +6,12 @@
 #include <boost/foreach.hpp>
 #include <boost/make_shared.hpp>
 
+#include <vector>
+
 #include "ros/ros.h"
 #include "std_msgs/Float32MultiArray.h"
 #include "std_msgs/Int16MultiArray.h"
+#include "std_msgs/Int8MultiArray.h"
 #include "std_msgs/Bool.h"
 #include "std_msgs/Int16.h"
 #include "std_msgs/Float32.h"
@@ -23,6 +26,10 @@
 // custom services msgs
 #include "fastsim/Teleport.h"
 #include "fastsim/UpdateDisplay.h"
+#include "fastsim/CIS.h"
+#include "fastsim/RobotColor.h"
+
+#include "fastsim/ISW.h"
 
 using namespace fastsim;
 
@@ -37,7 +44,15 @@ namespace fastsim {
   float teleport_theta = 0;
   bool new_speed_left = false;
   bool new_speed_right = false;
-  
+  int robot_color=0;
+  bool change_robot_color=false;
+
+  // change illuminated switch service
+  bool cis = false;
+  std::vector<int> cis_number;
+  std::vector<int> cis_state; // 0:false, 1: true, -1: change state
+
+
   // the callbacks
   void speed_left_cb(const std_msgs::Float32::ConstPtr& msg) {
     new_speed_left = true;
@@ -53,6 +68,13 @@ namespace fastsim {
     res.ack = true;
     return true;
   }
+  bool robot_color_cb(fastsim::RobotColor::Request &req,
+       fastsim::RobotColor::Response &res) {
+    robot_color = req.color;
+    change_robot_color=true;
+    res.ack = true;
+    return true;
+  }
   bool teleport_cb(fastsim::Teleport::Request &req,
 		   fastsim::Teleport::Response &res) {
     teleport = true;
@@ -60,6 +82,14 @@ namespace fastsim {
     teleport_y = req.y;
     teleport_theta = req.theta;
     res.ack = true;
+    return true;
+  }
+
+  bool cis_cb(fastsim::CIS::Request &req, fastsim::CIS::Response &res) {
+    cis=true;
+    cis_number.push_back(req.number);
+    cis_state.push_back(req.state);
+    res.ack=true;
     return true;
   }
 }
@@ -128,6 +158,40 @@ void publish_laser_scan(const ros::Publisher& laser_scan,
   }
 }
 
+void publish_isw_sensor(const ros::Publisher& sensor_isw,        
+        const boost::shared_ptr<Robot>& robot) {
+  if (!robot->get_light_sensors().empty()) {
+    // basic lasers
+    std_msgs::Int8MultiArray isw_msg;
+    for (size_t i = 0; i < robot->get_light_sensors().size(); ++i) {
+      isw_msg.data.push_back(robot->get_light_sensors()[i].get_activated());      
+    }
+    sensor_isw.publish(isw_msg);
+  }
+}
+
+void publish_isw(const ros::Publisher& pub_isw,        
+        const boost::shared_ptr<Map>& map) {
+  fastsim::ISW isw_msg;
+  typedef boost::unordered_map<int, int> mapindex;
+  mapindex index;
+  for (size_t i = 0; i <map->get_illuminated_switches().size(); ++i) {
+    if (index.find(map->get_illuminated_switches()[i]->get_color())==index.end())
+      index[map->get_illuminated_switches()[i]->get_color()]=0;
+    else {
+      index[map->get_illuminated_switches()[i]->get_color()]++;
+    }
+    isw_msg.index=index[map->get_illuminated_switches()[i]->get_color()];
+    isw_msg.x=map->get_illuminated_switches()[i]->get_x();      
+    isw_msg.y=map->get_illuminated_switches()[i]->get_y();      
+    isw_msg.color=map->get_illuminated_switches()[i]->get_color();      
+    isw_msg.on=map->get_illuminated_switches()[i]->get_on();      
+    pub_isw.publish(isw_msg);  
+  }
+}
+
+
+
 void publish_odometry(const ros::Publisher& odom,
 		      tf::TransformBroadcaster& tf,
 		      const boost::shared_ptr<Robot>& robot,
@@ -192,7 +256,13 @@ int main(int argc, char **argv) {
   if (!robot->get_laser_scanners().empty())
     laser_scan = n.advertise<sensor_msgs::LaserScan>("laser_scan", 1);
 
-  // radars (-> goals)
+  // light sensors
+  ros::Publisher sensor_isw;
+  if (!robot->get_light_sensors().empty())
+    sensor_isw = n.advertise<std_msgs::Int8MultiArray>("light_sensors", 10);
+
+
+  // radars (-> goals)  
   ros::Publisher sensor_radars;
   if (!robot->get_radars().empty())
     sensor_radars = n.advertise<std_msgs::Int16MultiArray>("radars", 10);
@@ -205,6 +275,11 @@ int main(int argc, char **argv) {
   // remember to set the /use_sim_time Parameter to true in launch files
   ros::Publisher clock = n.advertise<rosgraph_msgs::Clock>("clock", 10);
 
+  // illuminated switches
+  ros::Publisher pub_isw;
+  if(map->get_illuminated_switches().size()!=0)
+    pub_isw=n.advertise<fastsim::ISW>("isw",10);
+
   // inputs
   ros::Subscriber speed_left = 
     n.subscribe("speed_left", 10, speed_left_cb);
@@ -216,7 +291,12 @@ int main(int argc, char **argv) {
     n.advertiseService("teleport", teleport_cb);
   ros::ServiceServer service_display = 
     n.advertiseService("display", display_cb);
+  ros::ServiceServer service_cis = 
+    n.advertiseService("cis", cis_cb);
+  ros::ServiceServer service_robot_color = 
+    n.advertiseService("robot_color", robot_color_cb);
   
+
   // init the window
   boost::shared_ptr<Display> d;
   
@@ -238,6 +318,29 @@ int main(int argc, char **argv) {
 	k = 0;
       }
 
+    if (fastsim::cis){
+      while(cis_number.size()!=0){
+        if(cis_state[0]==-1){
+          map->get_illuminated_switches()[cis_number[0]]->set_on(!map->get_illuminated_switches()[cis_number[0]]->get_on());
+        }
+        else if (cis_state[0]==0){
+          map->get_illuminated_switches()[cis_number[0]]->set_on(false);
+        }
+        else if (cis_state[0]==1){
+          map->get_illuminated_switches()[cis_number[0]]->set_on(true);
+        }
+        cis_number.erase(cis_number.begin());
+        cis_state.erase(cis_state.begin());
+      }
+      fastsim::cis=false;
+    }
+
+    if(fastsim::change_robot_color) {
+      robot->set_color(fastsim::robot_color);
+      fastsim::change_robot_color=false;
+
+    }
+
     if (!sync || (new_speed_left && new_speed_right))
       {
 	++k;
@@ -258,6 +361,8 @@ int main(int argc, char **argv) {
     publish_laser_scan(laser_scan, tf, robot, sim_time);
     publish_radars(sensor_radars, robot);
     publish_odometry(odom, tf, robot, sim_time, sim_dt);
+    publish_isw_sensor(sensor_isw,robot);
+    publish_isw(pub_isw,map);
 
     // and the clock
     rosgraph_msgs::Clock msg_clock;

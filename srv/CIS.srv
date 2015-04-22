@@ -1,0 +1,4 @@
+int8 number
+int8 state
+---
+bool ack

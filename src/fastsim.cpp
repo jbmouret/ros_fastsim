@@ -57,6 +57,7 @@ namespace fastsim {
   void speed_left_cb(const std_msgs::Float32::ConstPtr& msg) {
     new_speed_left = true;
     sp_left = msg->data;
+    //ROS_INFO("Getting new speed_left: %f",sp_left);
   }
   void speed_right_cb(const std_msgs::Float32::ConstPtr& msg) {
     new_speed_right = true;
@@ -92,6 +93,13 @@ namespace fastsim {
     res.ack=true;
     return true;
   }
+}
+
+void publish_collision(const ros::Publisher& collision, 
+		    const boost::shared_ptr<Robot>& robot) {
+  std_msgs::Bool b;
+  b.data=robot->get_collision();
+  collision.publish(b);
 }
 
 void publish_radars(const ros::Publisher& sensor_radars, 
@@ -231,6 +239,11 @@ int main(int argc, char **argv) {
   n.param("path", path, std::string("."));
   bool sync = false;
   n.param("sync", sync, false);
+
+  double freq;
+  n.param("frequency", freq, 30.0);
+
+
   ROS_WARN_STREAM("changing path to "<<path);
   ROS_WARN_STREAM("settings is "<<settings_name);
   ROS_WARN_STREAM("sync is "<<sync);
@@ -247,6 +260,9 @@ int main(int argc, char **argv) {
     n.advertise<std_msgs::Bool>("left_bumper", 10);
   ros::Publisher right_bumper = 
     n.advertise<std_msgs::Bool>("right_bumper", 10);
+
+  ros::Publisher collision = 
+    n.advertise<std_msgs::Bool>("collision", 10);
 
   // lasers
   ros::Publisher sensor_lasers;
@@ -300,18 +316,15 @@ int main(int argc, char **argv) {
   // init the window
   boost::shared_ptr<Display> d;
   
-  ros::Rate loop_rate(30);
-  float sim_dt = 1.0 / 30.0f;
+  ros::Rate loop_rate(freq);
+  float sim_dt = 1.0 / freq;
   ros::Time sim_time = ros::Time::now();
 
   int k = 0;
   while (ros::ok()) {
     if (fastsim::teleport)
       {
-	std::cout<<"teleporting to:" 
-		 << teleport_x
-		 << "," << teleport_y <<","
-		 << "," << teleport_theta << std::endl;
+	ROS_INFO("Teleporting to (%f,%f,%f)", teleport_x, teleport_y, teleport_theta);
 	fastsim::teleport = false;
 	robot->set_pos(Posture(teleport_x, teleport_y, teleport_theta));
 	robot->move(0, 0, map);
@@ -355,6 +368,8 @@ int main(int argc, char **argv) {
     msg_right_bumper.data = robot->get_right_bumper();
     left_bumper.publish(msg_left_bumper);
     right_bumper.publish(msg_right_bumper);
+
+    publish_collision(collision,robot);
 
     // other publishers
     publish_lasers(sensor_lasers, robot);
